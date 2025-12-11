@@ -263,3 +263,293 @@ finetune(
 5. **Monitor validation loss** to detect overfitting
 6. **Use warmup** for learning rate scheduling
 7. **Save checkpoints** frequently
+
+---
+
+## Advanced Topics
+
+### Catastrophic Forgetting
+
+When fine-tuning causes the model to lose previously learned knowledge.
+
+**Causes:**
+- Learning rate too high
+- Too many training steps
+- Dataset too narrow/specialized
+
+**Mitigation Strategies:**
+- Lower learning rate (1e-5 to 5e-5 typical)
+- Use LoRA/adapters (preserves original weights)
+- Mix in general data during training
+- Early stopping based on validation
+- Elastic Weight Consolidation (EWC)
+
+### Learning Rate Scheduling
+
+```python
+# Common schedulers for fine-tuning
+from transformers import get_scheduler
+
+# Cosine with warmup (most common)
+scheduler = get_scheduler(
+    "cosine",
+    optimizer=optimizer,
+    num_warmup_steps=100,
+    num_training_steps=1000
+)
+
+# Linear decay with warmup
+scheduler = get_scheduler(
+    "linear",
+    optimizer=optimizer,
+    num_warmup_steps=100,
+    num_training_steps=1000
+)
+```
+
+**Warmup Rationale:**
+- Prevents early large updates that destabilize training
+- Typically 5-10% of total steps
+- Critical for fine-tuning pre-trained models
+
+### Data Requirements
+
+| Method | Minimum Data | Recommended |
+|--------|--------------|-------------|
+| Full FT | 10,000+ examples | 100,000+ |
+| LoRA | 1,000+ examples | 10,000+ |
+| Few-shot | 5-50 examples | N/A |
+| P-Tuning | 100+ examples | 1,000+ |
+
+**Data Quality > Quantity:**
+- Clean, well-formatted examples
+- Diverse coverage of use cases
+- Balanced class distribution
+- Consistent formatting/style
+
+### Hyperparameter Guidelines
+
+```yaml
+# Typical fine-tuning hyperparameters
+learning_rate: 2e-5          # Lower than pre-training
+batch_size: 8-32             # Depends on GPU memory
+epochs: 3-5                  # More risks overfitting
+weight_decay: 0.01           # L2 regularization
+warmup_ratio: 0.1            # 10% of steps
+gradient_accumulation: 4     # Effective larger batch
+max_grad_norm: 1.0           # Gradient clipping
+```
+
+### Multi-Task Fine-Tuning
+
+Training on multiple tasks simultaneously.
+
+```python
+# Multi-task dataset mixing
+datasets = {
+    "summarization": summarize_ds,
+    "qa": qa_ds,
+    "classification": classify_ds
+}
+
+# Proportional sampling
+train_ds = interleave_datasets(
+    list(datasets.values()),
+    probabilities=[0.4, 0.4, 0.2]
+)
+```
+
+**Benefits:**
+- Better generalization
+- Reduced catastrophic forgetting
+- More robust model
+
+---
+
+## RLHF Deep Dive
+
+### Reward Model Architecture
+
+```
+Input: [prompt, response] → Tokenize → Model → Scalar Reward
+```
+
+**Training Data Format:**
+```json
+{
+  "prompt": "Explain quantum computing",
+  "chosen": "Quantum computing uses qubits...",
+  "rejected": "Computers are fast machines..."
+}
+```
+
+**Loss Function (Bradley-Terry):**
+```
+L = -log(σ(r_chosen - r_rejected))
+```
+
+### PPO Algorithm Details
+
+```python
+# Simplified PPO training loop
+for batch in dataloader:
+    # 1. Generate responses
+    responses = policy.generate(batch["prompts"])
+
+    # 2. Compute rewards
+    rewards = reward_model(batch["prompts"], responses)
+
+    # 3. Compute KL penalty
+    kl_penalty = compute_kl(policy, reference, responses)
+
+    # 4. Final reward = reward - β * KL
+    final_rewards = rewards - beta * kl_penalty
+
+    # 5. Compute advantages (GAE)
+    advantages = compute_gae(final_rewards, values)
+
+    # 6. PPO policy update
+    policy_loss = ppo_loss(old_probs, new_probs, advantages)
+
+    # 7. Value function update
+    value_loss = mse(values, returns)
+```
+
+**Key Hyperparameters:**
+- `β` (KL coefficient): 0.01-0.2, prevents reward hacking
+- `clip_range`: 0.2, limits policy updates
+- `vf_coef`: 0.5, value loss weight
+- `ent_coef`: 0.01, entropy bonus for exploration
+
+### Common RLHF Issues
+
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| Reward hacking | High reward, poor quality | Increase KL penalty |
+| Mode collapse | Repetitive outputs | Add entropy bonus |
+| Training instability | Loss spikes | Lower learning rate |
+| Reference drift | Output degrades | More frequent KL checks |
+
+---
+
+## DPO Variants
+
+### IPO (Identity Preference Optimization)
+
+- More robust to noisy preferences
+- Uses identity mapping instead of log-sigmoid
+
+```
+L_IPO = (log(π/π_ref)_chosen - log(π/π_ref)_rejected - 1/2β)²
+```
+
+### KTO (Kahneman-Tversky Optimization)
+
+- Works with unpaired data (just good or bad examples)
+- Based on prospect theory
+
+```
+L_KTO = -log σ(β * (r_good - r_ref)) for good examples
+L_KTO = -log σ(β * (r_ref - r_bad)) for bad examples
+```
+
+### ORPO (Odds Ratio Preference Optimization)
+
+- Combines SFT and preference optimization
+- No reference model needed
+
+---
+
+## Evaluation During Fine-Tuning
+
+### Metrics to Track
+
+```python
+# Training metrics
+metrics = {
+    "train_loss": [],
+    "val_loss": [],
+    "learning_rate": [],
+    "gradient_norm": [],
+    "perplexity": [],
+}
+
+# For RLHF
+rlhf_metrics = {
+    "reward_mean": [],
+    "kl_divergence": [],
+    "entropy": [],
+    "response_length": [],
+}
+```
+
+### Early Stopping
+
+```python
+# Early stopping configuration
+early_stopping = EarlyStoppingCallback(
+    early_stopping_patience=3,
+    early_stopping_threshold=0.01
+)
+```
+
+### Checkpoint Selection
+
+- Don't always use last checkpoint
+- Evaluate on held-out set
+- Consider ensemble of checkpoints
+
+---
+
+## Production Considerations
+
+### Serving Fine-Tuned Models
+
+**LoRA Merging:**
+```python
+# Merge LoRA weights for inference
+from peft import PeftModel
+
+model = AutoModelForCausalLM.from_pretrained("base-model")
+model = PeftModel.from_pretrained(model, "lora-adapter")
+merged_model = model.merge_and_unload()
+merged_model.save_pretrained("merged-model")
+```
+
+**Benefits of Merging:**
+- No adapter overhead at inference
+- Standard model format
+- Compatible with TensorRT-LLM optimization
+
+**Multiple Adapters:**
+```python
+# Serve multiple adapters with single base model
+adapters = {
+    "customer_support": "adapter_cs",
+    "code_generation": "adapter_code",
+    "summarization": "adapter_sum",
+}
+
+# Switch adapters per request
+model.set_adapter(adapters[task_type])
+```
+
+### Version Control for Fine-Tuning
+
+```
+models/
+├── base/
+│   └── llama-3-8b/
+├── adapters/
+│   ├── v1.0-customer-support/
+│   ├── v1.1-customer-support/
+│   └── v2.0-code-gen/
+└── merged/
+    └── production-v1.1/
+```
+
+Track:
+- Training data version
+- Hyperparameters used
+- Evaluation metrics
+- Base model version

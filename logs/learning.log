@@ -13,3 +13,10 @@
 [2025-12-11 12:57:00] [INFO] [CONTENT] Updated README files for sections 3, 4, and 5
 [2025-12-11 12:58:00] [INFO] [CLEANUP] Removed redundant stub files (2-data-training.md, 3-architecture.md, 4-operations.md, 5-fundamentals.md)
 [2025-12-11 12:59:00] [INFO] [SETUP] Created logs folder for learning activity tracking
+[2025-12-11 13:30:00] [INFO] [CONTENT] Updated 1-infrastructure/README.md - Added comprehensive overview with parallelism table, code examples, quick reference
+[2025-12-11 13:35:00] [INFO] [CONTENT] Expanded 2_1-fine-tuning.md - Added catastrophic forgetting, LR scheduling, data requirements, RLHF deep dive, DPO variants, production considerations
+[2025-12-11 14:00:00] [INFO] [CONTENT] Expanded 1_3-deployment.md (109→918 lines) - Added Triton advanced config, Kubernetes full setup, continuous batching, vLLM, Slurm HPC, load balancing
+[2025-12-11 14:15:00] [INFO] [CONTENT] Expanded 1_4-nvidia-nim.md (75→821 lines) - Added architecture, all NIM types, K8s deployment, custom models, monitoring, performance tuning
+[2025-12-11 14:30:00] [INFO] [CONTENT] Expanded 2_2-data-preparation.md (278→784 lines) - Added deduplication (MinHash LSH), contamination detection, quality filtering, PII removal, synthetic data
+[2025-12-11 14:45:00] [INFO] [CONTENT] Expanded 3_1-prompt-engineering.md (386→810 lines) - Added Tree of Thoughts, prompt compression, jailbreak defense, guardrails, meta-prompting, caching
+[2025-12-11 15:00:00] [INFO] [CONTENT] Expanded 1_2-gpu-acceleration.md (425→960 lines) - Added multi-node scaling, NCCL deep dive, InfiniBand/GPUDirect, pipeline/tensor parallelism details, ZeRO, DGX SuperPOD
