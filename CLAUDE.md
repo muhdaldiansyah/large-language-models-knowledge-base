@@ -8,10 +8,11 @@ This is a comprehensive knowledge base for learning about Large Language Models 
 
 ```
 ├── 1 - infrastructure/             # Infrastructure topics (40% weight)
-│   ├── 1_1-model-optimization.md      # Quantization, TensorRT-LLM (17%)
-│   ├── 1_2-gpu-acceleration.md        # Parallelism, NVLink, NCCL (14%)
-│   ├── 1_3-deployment.md              # Triton, Kubernetes (9%)
+│   ├── 1_1-model-optimization.md      # Quantization, Pruning, Distillation, Speculative Decoding (17%)
+│   ├── 1_2-gpu-acceleration.md        # Parallelism, FlashAttention, NCCL, Memory Optimization (14%)
+│   ├── 1_3-deployment.md              # Triton, vLLM, Continuous Batching, ONNX (9%)
 │   ├── 1_4-nvidia-nim.md              # NIM deployment
+│   ├── 1_5-nvidia-ecosystem.md        # TAO, NGC, Base Command, AI Enterprise
 │   └── README.md
 ├── 2 - data-training/              # Data & Training topics (22% weight)
 │   ├── 2_1-fine-tuning.md             # LoRA, QLoRA, RLHF, DPO (13%)
@@ -90,9 +91,12 @@ See `learn.md` for the 22-technique learning system:
 
 ## Key Technologies Covered
 
-- **NVIDIA Stack**: NeMo, TensorRT-LLM, Triton, NIM, NCCL, Nsight
+- **NVIDIA Stack**: NeMo, TensorRT-LLM, Triton, NIM, NCCL, Nsight, TAO, NGC, Base Command
 - **Quantization**: FP8, INT8, INT4, AWQ, GPTQ, SmoothQuant
+- **Optimization**: Pruning, Knowledge Distillation, Speculative Decoding, 2:4 Sparsity
+- **Memory**: Gradient Checkpointing, FlashAttention, PagedAttention
 - **Parallelism**: Tensor, Pipeline, Data, Sequence
+- **Inference**: vLLM, Continuous Batching, ONNX, TensorRT
 - **Fine-tuning**: LoRA, QLoRA, RLHF, DPO, SFT
 - **RAG**: Milvus, FAISS, Pinecone, embeddings, reranking
 
