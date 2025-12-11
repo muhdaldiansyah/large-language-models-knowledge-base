@@ -249,9 +249,23 @@ define flow check facts
     bot say $corrected
 ```
 
-### Hallucination Detection
+### Hallucination Detection & Mitigation
 
-Identify unsupported claims.
+Hallucinations are outputs that are fluent but factually incorrect, unsupported, or fabricated.
+
+#### Types of Hallucinations
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Intrinsic** | Contradicts source material | "The document says X" when it says Y |
+| **Extrinsic** | Information not in sources | Adding facts not in provided context |
+| **Factual** | Verifiably false statements | "Paris is the capital of Germany" |
+| **Fabrication** | Invented entities/events | Citing non-existent papers/people |
+| **Inconsistency** | Self-contradictory outputs | Saying X then later saying not-X |
+
+#### Detection Methods
+
+**1. LLM-as-Judge (Self-Consistency)**
 
 ```python
 def detect_hallucination(response, context):
@@ -260,11 +274,239 @@ def detect_hallucination(response, context):
     Context: {context}
     Response: {response}
 
-    Does the response contain any claims not supported by the context?
-    Answer: yes/no and explain.
+    Analyze the response and identify any claims that are:
+    1. Not supported by the context
+    2. Contradicting the context
+    3. Adding information not present in context
+
+    For each claim, indicate: SUPPORTED, UNSUPPORTED, or CONTRADICTED.
+    Final verdict: GROUNDED or HALLUCINATED
     """
     result = judge_llm.generate(prompt)
-    return "yes" in result.lower()
+    return "hallucinated" in result.lower()
+```
+
+**2. Natural Language Inference (NLI)**
+
+```python
+from transformers import pipeline
+
+nli_model = pipeline("text-classification",
+                     model="roberta-large-mnli")
+
+def check_entailment(premise, hypothesis):
+    """Check if premise entails hypothesis"""
+    result = nli_model(f"{premise} [SEP] {hypothesis}")
+    # Returns: entailment, contradiction, or neutral
+    return result[0]['label']
+
+def detect_hallucination_nli(context, response):
+    """Use NLI to detect unsupported claims"""
+    # Split response into claims
+    claims = extract_claims(response)
+
+    hallucinated = []
+    for claim in claims:
+        label = check_entailment(context, claim)
+        if label in ['contradiction', 'neutral']:
+            hallucinated.append(claim)
+
+    return hallucinated
+```
+
+**3. Retrieval-Based Verification**
+
+```python
+def verify_with_retrieval(response, knowledge_base):
+    """Cross-reference response with knowledge base"""
+    claims = extract_claims(response)
+    verification_results = []
+
+    for claim in claims:
+        # Retrieve relevant documents
+        docs = knowledge_base.search(claim, top_k=5)
+
+        # Check support
+        support_score = compute_support_score(claim, docs)
+
+        verification_results.append({
+            'claim': claim,
+            'supported': support_score > 0.7,
+            'score': support_score,
+            'sources': docs
+        })
+
+    return verification_results
+```
+
+**4. Semantic Similarity Scoring**
+
+```python
+from sentence_transformers import SentenceTransformer, util
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def faithfulness_score(response, context):
+    """Measure how faithful response is to context"""
+    # Encode response and context
+    response_emb = model.encode(response, convert_to_tensor=True)
+    context_emb = model.encode(context, convert_to_tensor=True)
+
+    # Cosine similarity
+    similarity = util.cos_sim(response_emb, context_emb)
+    return similarity.item()
+```
+
+#### Mitigation Strategies
+
+**1. Constrained Decoding**
+
+Force model to only use tokens from source material.
+
+```python
+def constrained_generate(model, prompt, context):
+    """Generate using only vocabulary from context"""
+    # Extract allowed tokens from context
+    allowed_tokens = set(tokenizer.encode(context))
+
+    # Custom logits processor
+    def constrain_logits(logits):
+        mask = torch.full_like(logits, float('-inf'))
+        mask[list(allowed_tokens)] = 0
+        return logits + mask
+
+    return model.generate(prompt, logits_processor=constrain_logits)
+```
+
+**2. Citation Requirements**
+
+Force model to cite sources for claims.
+
+```python
+citation_prompt = """
+Based on the following documents, answer the question.
+You MUST cite sources using [1], [2], etc. for each claim.
+If information is not in the documents, say "I don't have information about this."
+
+Documents:
+{documents}
+
+Question: {question}
+
+Answer with citations:
+"""
+```
+
+**3. Retrieval Augmentation (RAG)**
+
+Ground responses in retrieved documents.
+
+```python
+def rag_with_verification(query, retriever, generator):
+    # Retrieve relevant docs
+    docs = retriever.search(query)
+
+    # Generate with context
+    response = generator.generate(query, context=docs)
+
+    # Verify response is grounded
+    if not is_grounded(response, docs):
+        return "I cannot provide a verified answer for this question."
+
+    return response
+```
+
+**4. Self-Reflection / Chain-of-Verification**
+
+```python
+def chain_of_verification(model, query, initial_response):
+    """
+    1. Generate initial response
+    2. Generate verification questions
+    3. Answer verification questions
+    4. Revise based on verification
+    """
+    # Generate verification questions
+    verification_prompt = f"""
+    Response: {initial_response}
+
+    Generate 3 questions to verify the factual claims in this response.
+    """
+    questions = model.generate(verification_prompt)
+
+    # Answer each verification question
+    answers = [model.generate(q) for q in questions]
+
+    # Revise original response
+    revision_prompt = f"""
+    Original response: {initial_response}
+    Verification Q&A: {list(zip(questions, answers))}
+
+    Revise the response to fix any inconsistencies found.
+    """
+    return model.generate(revision_prompt)
+```
+
+**5. Confidence Calibration**
+
+```python
+def generate_with_confidence(model, prompt):
+    """Generate response with confidence scores"""
+    response = model.generate(prompt, return_logits=True)
+
+    # Calculate per-token confidence
+    confidences = []
+    for logits in response.logits:
+        probs = F.softmax(logits, dim=-1)
+        max_prob = probs.max().item()
+        confidences.append(max_prob)
+
+    avg_confidence = sum(confidences) / len(confidences)
+
+    # Flag low-confidence responses
+    if avg_confidence < 0.7:
+        return response.text + "\n[Low confidence - verify this information]"
+
+    return response.text
+```
+
+#### Hallucination Metrics
+
+| Metric | Description | Tool |
+|--------|-------------|------|
+| **Faithfulness** | % claims supported by context | RAGAS, TruLens |
+| **FactScore** | Fine-grained factuality | FactScore |
+| **SelfCheckGPT** | Consistency across samples | SelfCheckGPT |
+| **HaluEval** | Hallucination benchmark | HaluEval |
+
+#### NeMo Guardrails for Hallucination
+
+```yaml
+# config.yml
+rails:
+  output:
+    flows:
+      - check hallucination
+
+  config:
+    hallucination_check:
+      enabled: true
+      method: "nli"  # or "llm_judge", "retrieval"
+      threshold: 0.8
+```
+
+```colang
+define flow check hallucination
+  $response = generate bot response
+  $sources = retrieve relevant documents
+  $grounded = execute check_grounding(response=$response, sources=$sources)
+
+  if not $grounded.is_faithful
+    bot say "Let me provide a more accurate response based on verified information."
+    $verified_response = generate response using only $sources
+    bot say $verified_response
+  else
+    bot say $response
 ```
 
 ### PII Masking
